@@ -1,0 +1,10 @@
+export default function PdfProLogo({ size = 28 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="7" fill="var(--accent)" />
+      <path d="M10 7h8l5 5v11.5A1.5 1.5 0 0 1 21.5 25h-11.5A1.5 1.5 0 0 1 8.5 23.5v-15A1.5 1.5 0 0 1 10 7z" fill="#fff" />
+      <path d="M18 7v4a1 1 0 0 0 1 1h4" fill="#FED7AA" />
+      <path d="M12 14h3.4a2.3 2.3 0 0 1 0 4.6H13.6V22H12z" fill="var(--accent)" />
+    </svg>
+  )
+}

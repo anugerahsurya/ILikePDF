@@ -1,0 +1,35 @@
+{
+  "name": "ilikepdf",
+  "private": true,
+  "version": "1.0.0",
+  "productName": "PDF Pro",
+  "description": "Alat PDF berbasis web: gabung, pisah, kompres, tanda tangan, dan lainnya, diproses lokal di browser",
+  "type": "module",
+  "author": "BPS IPDS",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "oxlint"
+  },
+  "dependencies": {
+    "@cantoo/pdf-lib": "^2.11.1",
+    "fflate": "^0.8.3",
+    "jspdf": "^4.2.1",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.2.108",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-dropzone": "^19.1.1",
+    "react-router-dom": "^7.18.2",
+    "react-signature-canvas": "^1.1.0-alpha.2",
+    "sonner": "^2.0.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
+    "oxlint": "^1.75.0",
+    "vite": "^8.2.0"
+  }
+}
