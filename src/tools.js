@@ -6,6 +6,7 @@ import {
   IconSignature,
   IconRotate,
   IconWatermark,
+  IconRemoveWatermark,
   IconUnlock,
   IconImage,
   IconFileText,
@@ -98,6 +99,15 @@ export const TOOLS = [
     desc: 'Beri teks seperti DRAFT atau RAHASIA di setiap halaman PDF.',
     keywords: 'watermark stempel draft rahasia',
     icon: IconWatermark,
+  },
+  {
+    id: 'remove-watermark',
+    path: '/remove-watermark',
+    group: 'edit',
+    title: 'Hapus Watermark',
+    desc: 'Bersihkan watermark visual, stempel, jejak AI, invisible Unicode, dan metadata C2PA.',
+    keywords: 'remove watermark hapus bersihkan stempel ai c2pa metadata provenance invisibles',
+    icon: IconRemoveWatermark,
   },
   {
     id: 'unlock',

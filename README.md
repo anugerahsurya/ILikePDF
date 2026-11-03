@@ -15,6 +15,7 @@ Web-based PDF tools for everyday office work. Every process runs in the user's b
 | Gambar ke PDF | JPG/PNG/WEBP/GIF/BMP → PDF, A4 or original image size |
 | Tanda Tangan | Draw or upload a signature, then drag it into place on the page |
 | Watermark | Diagonal/center/top/bottom text or a repeating pattern |
+| Hapus Watermark | Hapus watermark visual, stempel, jejak AI, invisible Unicode, dan metadata C2PA (didukung oleh algoritma watermarks-remover) |
 | Buka Kunci PDF | Remove the password and edit/print restrictions |
 
 PDFs that only have edit restrictions (common in official documents) can be used directly with every tool. PDFs that need a password to open must be unlocked first.

@@ -14,6 +14,7 @@ const PdfToImage = lazy(() => import('./pages/PdfToPng'))
 const ImageToPdf = lazy(() => import('./pages/ConvertPdf'))
 const AddSignature = lazy(() => import('./pages/AddSignature'))
 const WatermarkPdf = lazy(() => import('./pages/WatermarkPdf'))
+const RemoveWatermark = lazy(() => import('./pages/RemoveWatermark'))
 const UnlockPdf = lazy(() => import('./pages/UnlockPdf'))
 
 function ScrollToTop() {
@@ -51,6 +52,9 @@ export default function App() {
               <Route path="/image-to-pdf" element={<ImageToPdf />} />
               <Route path="/signature" element={<AddSignature />} />
               <Route path="/watermark" element={<WatermarkPdf />} />
+              <Route path="/remove-watermark" element={<RemoveWatermark />} />
+              <Route path="/watermark-remover" element={<Navigate to="/remove-watermark" replace />} />
+              <Route path="/clean-watermark" element={<Navigate to="/remove-watermark" replace />} />
               <Route path="/unlock" element={<UnlockPdf />} />
               {/* Old links */}
               <Route path="/pdf-to-png" element={<Navigate to="/pdf-to-image" replace />} />
