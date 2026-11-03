@@ -15,29 +15,45 @@ import {
   IconAlertTriangle,
   IconCheckCircle,
   IconShieldCheck,
+  IconWord,
 } from '../components/Icons'
 import { baseName, downloadBlob, formatSize } from '../utils/files'
 import {
   inspectPdfDocument,
   cleanPdfDocument,
+  inspectWordDocument,
+  cleanWordDocument,
+  createSampleWatermarkedDocx,
   inspectText,
   cleanText,
   cleanImageMetadata,
 } from '../utils/watermarkCleaner'
 
 const TABS = [
-  { value: 'pdf', label: 'PDF & Dokumen' },
-  { value: 'text', label: 'Teks & AI Stego' },
+  { value: 'pdf', label: 'PDF (.pdf)' },
+  { value: 'word', label: 'Word (.docx / .doc)' },
+  { value: 'text', label: 'Teks & Stego' },
   { value: 'image', label: 'Gambar (EXIF/C2PA)' },
 ]
 
 const PRESETS = [
-  { value: 'none', label: 'Hanya Metadata & AI' },
+  { value: 'none', label: 'Hanya Metadata & Anotasi' },
   { value: 'diagonal', label: 'Diagonal Tengah' },
   { value: 'center', label: 'Tengah Halaman' },
   { value: 'top', label: 'Header (Atas)' },
   { value: 'bottom', label: 'Footer (Bawah)' },
 ]
+
+const ACCEPT_PDF_OR_WORD = {
+  'application/pdf': ['.pdf'],
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+  'application/msword': ['.doc'],
+}
+
+const ACCEPT_WORD = {
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+  'application/msword': ['.doc'],
+}
 
 export default function RemoveWatermark() {
   const [activeTab, setActiveTab] = useState('pdf')
@@ -56,6 +72,17 @@ export default function RemoveWatermark() {
   const [pdfInspection, setPdfInspection] = useState(null)
   const [pdfResult, setPdfResult] = useState(null)
 
+  // --- Word (DOCX / DOC) Mode States ---
+  const [wordFile, setWordFile] = useState(null)
+  const [wordInspection, setWordInspection] = useState(null)
+  const [wordStripVisual, setWordStripVisual] = useState(true)
+  const [wordStripMeta, setWordStripMeta] = useState(true)
+  const [wordStripInvisibles, setWordStripInvisibles] = useState(true)
+  const [wordCustomText, setWordCustomText] = useState('')
+  const [wordConvertDocx, setWordConvertDocx] = useState(true)
+  const [wordBusy, setWordBusy] = useState(false)
+  const [wordResult, setWordResult] = useState(null)
+
   // --- Text Mode States ---
   const [inputText, setInputText] = useState('')
   const [normalizeSpaces, setNormalizeSpaces] = useState(true)
@@ -73,6 +100,15 @@ export default function RemoveWatermark() {
   // ─────────────────── PDF Handlers ───────────────────
   const handlePdfUpload = async files => {
     const f = files[0]
+    if (!f) return
+
+    // Auto-route .docx / .doc if dropped in the PDF tab
+    if (/\.(docx|doc)$/i.test(f.name)) {
+      setActiveTab('word')
+      await handleWordUpload([f])
+      return
+    }
+
     setPdfFile(f)
     setPageNo(1)
     setPdfResult(null)
@@ -82,7 +118,7 @@ export default function RemoveWatermark() {
       const inspectRes = await inspectPdfDocument(f)
       setPdfInspection(inspectRes)
       if (inspectRes.isSuspicious) {
-        toast.info(`Audit menemukan ${inspectRes.findings.length} indikator watermark/metadata.`)
+        toast.info(`Audit menemukan ${inspectRes.findings.length} indikator watermark/metadata pada PDF.`)
       }
     } catch {
       // ignore
@@ -94,14 +130,15 @@ export default function RemoveWatermark() {
     setPdfBusy(true)
 
     try {
-      const visualMask = visualPreset !== 'none'
-        ? {
-            enabled: true,
-            preset: visualPreset,
-            targetPages,
-            pageRange: customRange,
-          }
-        : null
+      const visualMask =
+        visualPreset !== 'none'
+          ? {
+              enabled: true,
+              preset: visualPreset,
+              targetPages,
+              pageRange: customRange,
+            }
+          : null
 
       const res = await cleanPdfDocument(pdfFile, {
         stripMetadata,
@@ -119,11 +156,74 @@ export default function RemoveWatermark() {
         originalSize: res.originalSize,
         cleanedSize: res.cleanedSize,
       })
-      toast.success('PDF berhasil dibersihkan dari watermark & jejak AI!')
+      toast.success('PDF berhasil dibersihkan dari watermark & metadata!')
     } catch (err) {
       toast.error(`Gagal membersihkan PDF: ${err.message}`)
     } finally {
       setPdfBusy(false)
+    }
+  }
+
+  // ─────────────────── Word (DOCX / DOC) Handlers ───────────────────
+  const handleWordUpload = async files => {
+    const f = files[0]
+    if (!f) return
+
+    if (/\.pdf$/i.test(f.name)) {
+      setActiveTab('pdf')
+      await handlePdfUpload([f])
+      return
+    }
+
+    setWordFile(f)
+    setWordResult(null)
+    setWordInspection(null)
+
+    try {
+      const inspectRes = await inspectWordDocument(f)
+      setWordInspection(inspectRes)
+      if (inspectRes.isSuspicious) {
+        toast.info(`Audit Word menemukan ${inspectRes.findings.length} indikator watermark/metadata.`)
+      } else {
+        toast.success('Dokumen Word berhasil dimuat.')
+      }
+    } catch (err) {
+      toast.error(err.message)
+    }
+  }
+
+  const handleSampleWord = async () => {
+    const sampleFile = createSampleWatermarkedDocx()
+    await handleWordUpload([sampleFile])
+    toast.info('Contoh file .DOCX dengan watermark "RAHASIA - DRAFT" berhasil dimuat.')
+  }
+
+  const handleApplyWordClean = async () => {
+    if (!wordFile) return
+    setWordBusy(true)
+
+    try {
+      const res = await cleanWordDocument(wordFile, {
+        stripVisualWatermark: wordStripVisual,
+        stripMetadata: wordStripMeta,
+        stripInvisibles: wordStripInvisibles,
+        customWatermarkText: wordCustomText,
+        convertDocToDocx: wordConvertDocx,
+      })
+
+      const outName = `${baseName(wordFile.name)}_tanpa_watermark.${res.ext}`
+      setWordResult({
+        name: outName,
+        blob: res.blob,
+        actions: res.actions,
+        originalSize: res.originalSize,
+        cleanedSize: res.cleanedSize,
+      })
+      toast.success(`Dokumen Word (.${res.ext.toUpperCase()}) berhasil dibersihkan dari watermark!`)
+    } catch (err) {
+      toast.error(`Gagal membersihkan dokumen Word: ${err.message}`)
+    } finally {
+      setWordBusy(false)
     }
   }
 
@@ -136,7 +236,7 @@ export default function RemoveWatermark() {
     const res = inspectText(inputText)
     setTextInspection(res)
     if (res.isSuspicious) {
-      toast.warning(`Terdeteksi ${res.invisibleCount + res.tagCharsCount + res.puaCount} karakter steganografi AI / tersembunyi!`)
+      toast.warning(`Terdeteksi ${res.invisibleCount + res.tagCharsCount + res.puaCount} karakter tersembunyi!`)
     } else {
       toast.success('Teks tampak bersih dari invisible steganography.')
     }
@@ -172,13 +272,12 @@ export default function RemoveWatermark() {
   }
 
   const handleSampleText = () => {
-    // Inserts text containing Zero Width Space (U+200B), Soft Hyphen (U+00AD), and Non-Breaking Space
     const sample =
-      'Laporan\u200B ini disusun\u00AD secara otomatis\u200C oleh asisten\u200D AI dengan\u00A0format tersembunyi\uFEFF.'
+      'Laporan\u200B ini disusun\u00AD secara otomatis\u200C oleh asisten\u200D dengan\u00A0format tersembunyi\uFEFF.'
     setInputText(sample)
     setTextInspection(inspectText(sample))
     setCleanedOutput('')
-    toast.info('Contoh teks dengan invisible AI marks dimasukkan.')
+    toast.info('Contoh teks dengan karakter tersembunyi dimasukkan.')
   }
 
   const handleTextFileUpload = async files => {
@@ -217,7 +316,7 @@ export default function RemoveWatermark() {
     }
   }
 
-  // Render Visual Overlay for preview
+  // Render Visual Overlay for PDF preview
   const renderVisualOverlay = () => {
     if (!preview || visualPreset === 'none') return null
     let style = {}
@@ -321,15 +420,16 @@ export default function RemoveWatermark() {
             </ResultPanel>
           ) : !pdfFile ? (
             <Dropzone
+              accept={ACCEPT_PDF_OR_WORD}
               onFiles={handlePdfUpload}
-              title="Pilih file PDF untuk dibersihkan"
-              hint="Dibersihkan 100% lokal di browser Anda (metadata, jejak AI, C2PA, watermark visual)"
+              title="Pilih file PDF (atau Word .docx/.doc) untuk dibersihkan"
+              hint="Dibersihkan 100% lokal di browser Anda (watermark visual, stempel, metadata, C2PA)"
             />
           ) : (
-            <div className="tool-layout">
+            <div className="split-layout">
               {/* Left / Settings Column */}
-              <div className="tool-controls">
-                <ul className="file-list" style={{ marginBottom: '16px' }}>
+              <div className="workspace">
+                <ul className="file-list">
                   <FileRow
                     file={pdfFile}
                     meta={`${numPages || '…'} halaman`}
@@ -345,7 +445,6 @@ export default function RemoveWatermark() {
                   <div
                     className="panel"
                     style={{
-                      marginBottom: '16px',
                       background: pdfInspection.isSuspicious ? 'var(--warn-soft)' : 'var(--ok-soft)',
                       borderColor: pdfInspection.isSuspicious ? 'var(--warn)' : 'var(--ok)',
                     }}
@@ -374,7 +473,7 @@ export default function RemoveWatermark() {
 
                 {/* Cleaning Options */}
                 <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  <h3 style={{ fontSize: '15px' }}>Opsi Pembersihan Jejak AI & Metadata</h3>
+                  <h3 style={{ fontSize: '15px' }}>Opsi Pembersihan Metadata & Anotasi</h3>
 
                   <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
                     <input
@@ -385,7 +484,7 @@ export default function RemoveWatermark() {
                     <div>
                       <span style={{ fontWeight: 500 }}>Hapus Stream XMP Metadata & C2PA</span>
                       <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-3)' }}>
-                        Menghapus manifest C2PA, jejak model AI generator, dan prompt tersembunyi.
+                        Menghapus manifest C2PA dan paket metadata XMP tersembunyi.
                       </p>
                     </div>
                   </label>
@@ -420,7 +519,7 @@ export default function RemoveWatermark() {
                 </div>
 
                 {/* Visual Watermark Removal / Masking */}
-                <div className="panel" style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   <h3 style={{ fontSize: '15px' }}>Pembersihan Watermark Visual (Stempel)</h3>
                   <Field label="Posisi Stempel Watermark" hint="Tutup stempel visual dengan lapisan putih bersih">
                     <Segmented
@@ -460,7 +559,7 @@ export default function RemoveWatermark() {
                   )}
                 </div>
 
-                <div className="action-bar" style={{ marginTop: '20px' }}>
+                <div className="action-bar">
                   <button
                     type="button"
                     className="btn btn-primary btn-lg"
@@ -475,9 +574,10 @@ export default function RemoveWatermark() {
               </div>
 
               {/* Right / Preview Column */}
-              <div className="tool-preview">
-                <div className="preview-panel" style={{ position: 'relative' }}>
-                  <div className="preview-nav">
+              <div className="panel preview-panel">
+                <div className="panel-head">
+                  <h2>Pratinjau</h2>
+                  <div className="pager">
                     <button
                       type="button"
                       className="btn-icon"
@@ -486,8 +586,8 @@ export default function RemoveWatermark() {
                     >
                       <IconArrowLeft size={16} />
                     </button>
-                    <span>
-                      Halaman {pageNo} dari {numPages || 1}
+                    <span className="mono">
+                      {pageNo} / {numPages || 1}
                     </span>
                     <button
                       type="button"
@@ -498,28 +598,25 @@ export default function RemoveWatermark() {
                       <IconArrowRight size={16} />
                     </button>
                   </div>
+                </div>
 
-                  <div
-                    className="preview-canvas-wrapper"
-                    style={{
-                      position: 'relative',
-                      display: 'inline-block',
-                      margin: '0 auto',
-                      boxShadow: 'var(--shadow)',
-                      background: '#fff',
-                    }}
-                  >
-                    {preview ? (
-                      <img
-                        src={preview.url}
-                        alt={`Halaman ${pageNo}`}
-                        style={{ display: 'block', maxWidth: '100%', height: 'auto' }}
-                      />
-                    ) : (
-                      <div className="page-skeleton" style={{ width: '380px', height: '520px' }} />
-                    )}
-                    {renderVisualOverlay()}
-                  </div>
+                <div
+                  className="stage"
+                  style={{
+                    position: 'relative',
+                    aspectRatio: preview?.size ? preview.size.width / preview.size.height : 0.707,
+                  }}
+                >
+                  {preview ? (
+                    <img
+                      className="stage-page"
+                      src={preview.url}
+                      alt={`Halaman ${pageNo}`}
+                    />
+                  ) : (
+                    <div className="page-skeleton" />
+                  )}
+                  {renderVisualOverlay()}
                 </div>
               </div>
             </div>
@@ -527,13 +624,280 @@ export default function RemoveWatermark() {
         </>
       )}
 
-      {/* ──────────────── TAB 2: TEXT & AI STEGO ──────────────── */}
+      {/* ──────────────── TAB 2: WORD (.DOCX / .DOC) ──────────────── */}
+      {activeTab === 'word' && (
+        <>
+          {wordResult ? (
+            <ResultPanel
+              title="Dokumen Word Berhasil Dibersihkan"
+              summary={`Ukuran: ${formatSize(wordResult.cleanedSize)} (sebelumnya ${formatSize(wordResult.originalSize)})`}
+              files={[wordResult]}
+              onReset={() => {
+                setWordFile(null)
+                setWordResult(null)
+                setWordInspection(null)
+              }}
+            >
+              <div className="panel" style={{ marginTop: '16px', background: 'var(--surface-2)' }}>
+                <h3 style={{ fontSize: '15px', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <IconShieldCheck size={18} />
+                  Tindakan Pembersihan Word yang Diterapkan:
+                </h3>
+                <ul style={{ paddingLeft: '20px', margin: 0, fontSize: '14px', color: 'var(--text-2)' }}>
+                  {wordResult.actions.map((act, i) => (
+                    <li key={i} style={{ marginBottom: '4px' }}>{act}</li>
+                  ))}
+                </ul>
+              </div>
+            </ResultPanel>
+          ) : !wordFile ? (
+            <div className="workspace">
+              <Dropzone
+                accept={ACCEPT_WORD}
+                onFiles={handleWordUpload}
+                title="Pilih file Word (.docx atau .doc) untuk dihapus watermark-nya"
+                hint="Menghapus watermark teks/gambar di Header Word, latar belakang, metadata pembuat, RSID, & karakter tersembunyi"
+              />
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <button type="button" className="btn btn-secondary" onClick={handleSampleWord}>
+                  <IconSparkles size={15} />
+                  Uji dengan Contoh File .DOCX Ber-Watermark
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="split-layout">
+              <div className="workspace">
+                <ul className="file-list">
+                  <FileRow
+                    file={wordFile}
+                    tag={wordFile.name.toLowerCase().endsWith('.doc') ? 'DOC' : 'DOCX'}
+                    meta={
+                      wordInspection
+                        ? `${wordInspection.watermarkCount} watermark · ${wordInspection.previewParagraphs.length} paragraf`
+                        : 'memeriksa…'
+                    }
+                    onRemove={() => {
+                      setWordFile(null)
+                      setWordInspection(null)
+                    }}
+                  />
+                </ul>
+
+                {wordInspection && (
+                  <div
+                    className="panel"
+                    style={{
+                      background: wordInspection.isSuspicious ? 'var(--warn-soft)' : 'var(--ok-soft)',
+                      borderColor: wordInspection.isSuspicious ? 'var(--warn)' : 'var(--ok)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                      {wordInspection.isSuspicious ? (
+                        <IconAlertTriangle size={18} />
+                      ) : (
+                        <IconCheckCircle size={18} />
+                      )}
+                      <strong style={{ fontSize: '14px' }}>
+                        {wordInspection.isSuspicious
+                          ? 'Audit Word: Ditemukan Watermark / Metadata'
+                          : 'Audit Word: Dokumen Tampak Bersih'}
+                      </strong>
+                    </div>
+                    {wordInspection.findings.length > 0 && (
+                      <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: 'var(--text-2)' }}>
+                        {wordInspection.findings.map((f, idx) => (
+                          <li key={idx} style={{ marginBottom: '3px' }}>{f}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+
+                <div className="panel" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <h3 style={{ fontSize: '15px' }}>Opsi Pembersihan Dokumen Word (.DOCX / .DOC)</h3>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={wordStripVisual}
+                      onChange={e => setWordStripVisual(e.target.checked)}
+                    />
+                    <div>
+                      <span style={{ fontWeight: 500 }}>Hapus Watermark Visual & Gambar Latar</span>
+                      <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-3)' }}>
+                        Menghapus objek Watermark teks diagonal/tengah (VML & SDT Gallery), gambar background Header, dan warna latar halaman.
+                      </p>
+                    </div>
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={wordStripMeta}
+                      onChange={e => setWordStripMeta(e.target.checked)}
+                    />
+                    <div>
+                      <span style={{ fontWeight: 500 }}>Bersihkan Metadata & Riwayat Sesi Edit (RSID)</span>
+                      <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-3)' }}>
+                        Mengosongkan Author, LastModifiedBy, Company, Application, dan kode pelacak revisi RSID.
+                      </p>
+                    </div>
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={wordStripInvisibles}
+                      onChange={e => setWordStripInvisibles(e.target.checked)}
+                    />
+                    <div>
+                      <span style={{ fontWeight: 500 }}>Hapus Steganografi & Invisible Unicode di Teks</span>
+                      <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-3)' }}>
+                        Menghapus Zero-Width Space (U+200B), Soft Hyphen, dan menormalkan spasi homoglyph tanpa mengubah format paragraf.
+                      </p>
+                    </div>
+                  </label>
+
+                  {wordInspection && wordInspection.format !== 'docx' && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={wordConvertDocx}
+                        onChange={e => setWordConvertDocx(e.target.checked)}
+                      />
+                      <div>
+                        <span style={{ fontWeight: 500 }}>Simpan sebagai Format .DOCX Modern Bersih</span>
+                        <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-3)' }}>
+                          Direkomendasikan untuk file .DOC lama agar seluruh struktur objek watermark terhapus sempurna.
+                        </p>
+                      </div>
+                    </label>
+                  )}
+
+                  <Field
+                    label="Hapus Teks Stempel Tertentu (Opsional)"
+                    hint="Isi jika ada teks berulang di header/dokumen yang juga ingin dihapus"
+                  >
+                    <input
+                      type="text"
+                      className="input"
+                      placeholder="Contoh: DRAFT atau CONFIDENTIAL"
+                      value={wordCustomText}
+                      onChange={e => setWordCustomText(e.target.value)}
+                    />
+                  </Field>
+                </div>
+
+                <div className="action-bar">
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-lg"
+                    onClick={handleApplyWordClean}
+                    disabled={wordBusy}
+                    style={{ width: '100%' }}
+                  >
+                    {wordBusy ? <Spinner /> : <IconRemoveWatermark size={18} />}
+                    Bersihkan Dokumen Word Sekarang
+                  </button>
+                </div>
+              </div>
+
+              {/* Right: Word Document Preview */}
+              <div className="panel preview-panel">
+                <div className="panel-head">
+                  <h2>Pratinjau Dokumen Word</h2>
+                  <span className="status status-ok">
+                    {wordInspection?.format === 'docx' ? 'OpenXML .DOCX' : 'Legacy .DOC'}
+                  </span>
+                </div>
+
+                <div
+                  style={{
+                    position: 'relative',
+                    minHeight: '420px',
+                    maxHeight: '520px',
+                    overflowY: 'auto',
+                    padding: '28px 24px',
+                    background: '#ffffff',
+                    color: '#1b1a17',
+                    borderRadius: '8px',
+                    boxShadow: 'inset 0 0 0 1px var(--border)',
+                    fontFamily: 'Calibri, Arial, sans-serif',
+                    fontSize: '14px',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {/* Simulated Watermark Overlay if detected */}
+                  {wordInspection && wordInspection.watermarkCount > 0 && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        pointerEvents: 'none',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <span
+                        style={{
+                          transform: 'rotate(-35deg)',
+                          fontSize: '32px',
+                          fontWeight: 700,
+                          color: wordStripVisual ? 'rgba(220, 38, 38, 0.22)' : 'rgba(120, 120, 120, 0.25)',
+                          textDecoration: wordStripVisual ? 'line-through' : 'none',
+                          border: wordStripVisual ? '2px dashed rgba(220, 38, 38, 0.45)' : 'none',
+                          padding: '6px 16px',
+                          borderRadius: '6px',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {wordInspection.watermarkTexts[0] || 'WATERMARK TERDETEKSI'}
+                      </span>
+                    </div>
+                  )}
+
+                  {wordInspection?.previewParagraphs?.length > 0 ? (
+                    wordInspection.previewParagraphs.map((p, idx) => (
+                      <p
+                        key={idx}
+                        style={{
+                          marginBottom: '12px',
+                          fontWeight: idx === 0 && p.length < 80 ? 700 : 400,
+                          position: 'relative',
+                        }}
+                      >
+                        {p}
+                      </p>
+                    ))
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '320px', color: '#8a857b', textAlign: 'center' }}>
+                      <IconWord size={36} />
+                      <p style={{ marginTop: '10px' }}>Dokumen siap diproses dan dibersihkan.</p>
+                    </div>
+                  )}
+                </div>
+
+                {wordInspection && wordInspection.watermarkCount > 0 && wordStripVisual && (
+                  <p className="field-hint" style={{ marginTop: '10px', color: 'var(--ok)' }}>
+                    ✓ Watermark "{wordInspection.watermarkTexts[0] || 'Objek Header'}" yang dicoret di atas akan dihapus permanen dari file Word.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ──────────────── TAB 3: TEXT & STEGO ──────────────── */}
       {activeTab === 'text' && (
         <div style={{ maxWidth: '840px', margin: '0 auto' }}>
           <div className="panel" style={{ marginBottom: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
               <div>
-                <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Pembersih Steganografi AI & Invisible Unicode</h3>
+                <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Pembersih Steganografi & Invisible Unicode</h3>
                 <p style={{ fontSize: '13px', color: 'var(--text-2)' }}>
                   Menghapus Zero-Width Space (U+200B), Soft Hyphen, Tag Characters, BiDi Overrides, dan menormalkan spasi homoglyph.
                 </p>
@@ -544,15 +908,15 @@ export default function RemoveWatermark() {
                 onClick={handleSampleText}
               >
                 <IconSparkles size={14} />
-                Uji Contoh Teks AI
+                Uji Contoh Teks
               </button>
             </div>
 
-            <Field label="Input Teks Anda:" hint="Tempel teks artikel/esai atau unggah file .txt / .md">
+            <Field label="Input Teks Anda:" hint="Tempel teks artikel/dokumen atau unggah file .txt / .md">
               <textarea
                 className="input"
                 rows={8}
-                style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: '13px' }}
+                style={{ width: '100%', height: 'auto', padding: '10px 12px', fontFamily: 'var(--font-mono)', fontSize: '13px' }}
                 placeholder="Tempel teks di sini..."
                 value={inputText}
                 onChange={e => {
@@ -579,7 +943,7 @@ export default function RemoveWatermark() {
                     checked={stripTags}
                     onChange={e => setStripTags(e.target.checked)}
                   />
-                  Hapus AI Tag Stego (U+E0000)
+                  Hapus Tag Stego (U+E0000)
                 </label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
                   <input
@@ -632,14 +996,14 @@ export default function RemoveWatermark() {
                 {textInspection.isSuspicious ? <IconAlertTriangle size={20} /> : <IconCheckCircle size={20} />}
                 <strong style={{ fontSize: '15px' }}>
                   {textInspection.isSuspicious
-                    ? `Peringatan: Ditemukan ${textInspection.findings.length} Karakter Steganografi AI!`
+                    ? `Peringatan: Ditemukan ${textInspection.findings.length} Karakter Tersembunyi!`
                     : 'Teks Bersih: Tidak ditemukan invisible watermark.'}
                 </strong>
               </div>
 
               {textInspection.isSuspicious && (
                 <div style={{ fontSize: '13px', marginTop: '10px' }}>
-                  <div style={{ display: 'flex', gap: '16px', marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', gap: '16px', marginBottom: '10px', flexWrap: 'wrap' }}>
                     <span>Invisible / Zero-Width: <strong>{textInspection.invisibleCount}</strong></span>
                     <span>Tag Characters: <strong>{textInspection.tagCharsCount}</strong></span>
                     <span>Homoglyph Spaces: <strong>{textInspection.homoglyphSpaceCount}</strong></span>
@@ -690,14 +1054,14 @@ export default function RemoveWatermark() {
                 rows={8}
                 readOnly
                 value={cleanedOutput}
-                style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: '13px', background: 'var(--surface-2)' }}
+                style={{ width: '100%', height: 'auto', padding: '10px 12px', fontFamily: 'var(--font-mono)', fontSize: '13px', background: 'var(--surface-2)' }}
               />
             </div>
           )}
         </div>
       )}
 
-      {/* ──────────────── TAB 3: IMAGES ──────────────── */}
+      {/* ──────────────── TAB 4: IMAGES ──────────────── */}
       {activeTab === 'image' && (
         <div style={{ maxWidth: '640px', margin: '0 auto' }}>
           {imageResult ? (
@@ -733,7 +1097,7 @@ export default function RemoveWatermark() {
               onFiles={handleImageUpload}
               busy={imageBusy}
               title="Pilih gambar untuk dibersihkan"
-              hint="Menghapus EXIF, XMP, jejak C2PA, GPS, dan metadata AI generator secara otomatis"
+              hint="Menghapus EXIF, XMP, jejak C2PA, GPS, dan metadata tersembunyi secara otomatis"
             />
           )}
         </div>
